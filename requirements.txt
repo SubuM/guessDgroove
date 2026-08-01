@@ -3,6 +3,7 @@ librosa==0.10.2
 pydub==0.25.1
 numpy>=2.0.0,<2.5.0
 yt-dlp
+curl-cffi==0.11.4
 matplotlib
 static-ffmpeg
 audioop-lts; python_version >= "3.13"

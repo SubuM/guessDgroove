@@ -8,10 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY v12.py .
+COPY v13.py .
 
 RUN mkdir -p cache/v7
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "v12.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+CMD ["streamlit", "run", "v13.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]

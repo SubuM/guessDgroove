@@ -1,14 +1,16 @@
 """
-guessDgroove v12 - Song Prelude Quiz
+guessDgroove v13 - Song Prelude Quiz
 Page 1: paste a YouTube link and extract the preludes.
 Choose what to guess: artist name, track/song name, or album/movie name.
 Page 2: quiz — hear each song prelude, type your guess and check it.
-Run with: streamlit run v12.py
+Run with: streamlit run v13.py
 Cloud: deploys as a Docker web service (e.g. Render free tier) with system
 ffmpeg; static-ffmpeg is only a local fallback when ffmpeg is not installed.
+YouTube bot checks on server IPs are bypassed via optional browser-cookies
+upload plus automatic player-client / impersonation fallbacks (curl-cffi).
 """
 
-import os, re, io, difflib, shutil
+import os, re, io, hashlib, difflib, shutil
 from pathlib import Path
 
 import streamlit as st
@@ -34,8 +36,27 @@ CACHE_DIR = Path("./cache/v7")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-@st.cache_data(show_spinner=False)
-def download_audio(url: str) -> tuple:
+_BOT_HINTS = ("sign in to confirm", "not a bot", "sign in",
+              "too many requests", "rate limit", "potd", "nsig",
+              "unable to extract")
+
+
+def _looks_like_bot_block(err: Exception) -> bool:
+    low = str(err).lower()
+    return any(h in low for h in _BOT_HINTS)
+
+
+def _impersonate_target() -> object | None:
+    try:
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+        return ImpersonateTarget.from_str("chrome")
+    except Exception:
+        return None
+
+
+def _download_with_strategy(url: str, cookies_path: str | None,
+                            client: str | None = None,
+                            impersonate: bool = False) -> dict:
     opts = {
         "format": "bestaudio/best",
         "outtmpl": str(CACHE_DIR / "%(id)s.%(ext)s"),
@@ -45,22 +66,56 @@ def download_audio(url: str) -> tuple:
     }
     if _ffmpeg_path:
         opts["ffmpeg_location"] = _ffmpeg_path
+    if cookies_path:
+        opts["cookiefile"] = cookies_path
+    if client:
+        opts["extractor_args"] = {"youtube": {"player_client": [client]}}
+    if impersonate:
+        target = _impersonate_target()
+        if target:
+            opts["impersonate"] = target
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filepath = str(CACHE_DIR / f"{info['id']}.mp3")
-        title = info.get("title", "Unknown")
-        chapters = info.get("chapters") or []
-        description = info.get("description") or ""
-        meta = {
-            "artist": info.get("artist") or info.get("creator"),
-            "track": info.get("track"),
-            "album": info.get("album") or info.get("alt_title"),
-            "channel": info.get("channel") or info.get("uploader"),
-            "upload_date": info.get("upload_date"),
-            "duration": info.get("duration"),
-            "view_count": info.get("view_count"),
-        }
-        return filepath, title, chapters, description, meta
+        return ydl.extract_info(url, download=True)
+
+
+@st.cache_data(show_spinner=False)
+def download_audio(url: str, cookies_path: str | None = None,
+                   cookies_sig: str | None = None) -> tuple:
+    strategies = [
+        {},
+        {"client": "android"},
+        {"client": "tv"},
+        {"impersonate": True},
+        {"client": "android", "impersonate": True},
+    ]
+    errors = []
+    info = None
+    for i, strat in enumerate(strategies):
+        label = ", ".join(strat.values()) or "default"
+        try:
+            info = _download_with_strategy(url, cookies_path, **strat)
+            break
+        except Exception as e:
+            errors.append(f"[{label}] {e}")
+            if i == 0 and not _looks_like_bot_block(e):
+                break
+    if info is None:
+        raise RuntimeError(
+            "YouTube download failed with all strategies:\n" + "\n".join(errors))
+    filepath = str(CACHE_DIR / f"{info['id']}.mp3")
+    title = info.get("title", "Unknown")
+    chapters = info.get("chapters") or []
+    description = info.get("description") or ""
+    meta = {
+        "artist": info.get("artist") or info.get("creator"),
+        "track": info.get("track"),
+        "album": info.get("album") or info.get("alt_title"),
+        "channel": info.get("channel") or info.get("uploader"),
+        "upload_date": info.get("upload_date"),
+        "duration": info.get("duration"),
+        "view_count": info.get("view_count"),
+    }
+    return filepath, title, chapters, description, meta
 
 
 def ms_to_str(ms: int) -> str:
@@ -315,21 +370,21 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-if "v12_stage" not in st.session_state:
-    st.session_state["v12_stage"] = "upload"
-if "v12_guess_min_ratio" not in st.session_state:
-    st.session_state["v12_guess_min_ratio"] = 0.85
-if "v12_quiz_idx" not in st.session_state:
-    st.session_state["v12_quiz_idx"] = 0
-if "v12_mode" not in st.session_state:
-    st.session_state["v12_mode"] = "track"
+if "v13_stage" not in st.session_state:
+    st.session_state["v13_stage"] = "upload"
+if "v13_guess_min_ratio" not in st.session_state:
+    st.session_state["v13_guess_min_ratio"] = 0.85
+if "v13_quiz_idx" not in st.session_state:
+    st.session_state["v13_quiz_idx"] = 0
+if "v13_mode" not in st.session_state:
+    st.session_state["v13_mode"] = "track"
 
 st.title("🎵 Song Prelude Quiz")
 st.markdown("Paste a YouTube link to a video containing **multiple songs in sequence** "
             "to hear a short intro prelude of each detected song.")
 
-if st.session_state["v12_stage"] == "upload":
-    url = st.text_input("YouTube URL", key="v12_url",
+if st.session_state["v13_stage"] == "upload":
+    url = st.text_input("YouTube URL", key="v13_url",
                         placeholder="https://www.youtube.com/watch?v=...",
                         label_visibility="collapsed")
 
@@ -351,7 +406,27 @@ if st.session_state["v12_stage"] == "upload":
                                     help="Minimum similarity score needed for a guess to count as correct. "
                                          "1.00 = exact match only (after normalizing case/punctuation). "
                                          "Lower = more lenient.")
-        st.session_state["v12_guess_min_ratio"] = guess_min_ratio
+        st.session_state["v13_guess_min_ratio"] = guess_min_ratio
+
+        st.divider()
+        cookies_file = st.file_uploader(
+            "YouTube cookies (optional — bypass bot check)",
+            type=["txt"],
+            help="If downloads fail with \"Sign in to confirm you're not a bot\", "
+                 "export your browser's YouTube cookies to a Netscape-format .txt "
+                 "file (e.g. with the 'Get cookies.txt LOCALLY' extension) and "
+                 "upload it here. Cookies are only sent to YouTube when downloading.")
+        cookies_path = None
+        cookies_sig = None
+        if cookies_file is not None:
+            cookies_path = str(CACHE_DIR / "cookies.txt")
+            data = cookies_file.getvalue()
+            Path(cookies_path).write_bytes(data)
+            cookies_sig = hashlib.md5(data).hexdigest()
+            st.caption("✅ Cookies loaded and will be used for downloads.")
+        else:
+            st.caption("No cookies uploaded — server IPs are more likely to be "
+                       "blocked by YouTube's bot check. Auto-fallback is enabled.")
 
     prelude_dur_ms = prelude_sec * 1000
 
@@ -359,10 +434,17 @@ if st.session_state["v12_stage"] == "upload":
         with st.status("Processing...", expanded=True) as status:
             st.write("📥 Downloading audio...")
             try:
-                filepath, video_title, chapters, description, meta = download_audio(url.strip())
+                filepath, video_title, chapters, description, meta = download_audio(
+                    url.strip(), cookies_path=cookies_path, cookies_sig=cookies_sig)
                 status.update(label=f"✅ Downloaded: {video_title}", state="running")
             except Exception as e:
                 st.error(f"Download failed: {e}")
+                st.markdown(
+                    "**How to fix the bot check:** open ⚙️ **Settings**, upload a "
+                    "cookies file exported from a browser where you're logged in to "
+                    "YouTube, then click **Analyze** again. Until then, the app "
+                    "automatically retries with alternate clients and browser "
+                    "impersonation.")
                 st.stop()
 
             st.write("✂️  Detecting song boundaries...")
@@ -396,7 +478,7 @@ if st.session_state["v12_stage"] == "upload":
             st.warning("No song segments detected. Try adjusting the detection settings.")
             st.stop()
 
-        st.session_state["v12_results"] = {
+        st.session_state["v13_results"] = {
             "url": url.strip(),
             "filepath": filepath,
             "video_title": video_title,
@@ -410,7 +492,7 @@ if st.session_state["v12_stage"] == "upload":
             "prelude_dur_ms": prelude_dur_ms,
         }
 
-    results = st.session_state.get("v12_results")
+    results = st.session_state.get("v13_results")
     if results and results["url"] == url.strip():
         meta = results.get("meta", {})
         segments = results["segments"]
@@ -443,9 +525,9 @@ if st.session_state["v12_stage"] == "upload":
             if st.button("🎤  Artist name", type="primary",
                          use_container_width=True, disabled=not has_artist,
                          help=artist_help):
-                st.session_state["v12_mode"] = "artist"
-                st.session_state["v12_quiz_idx"] = 0
-                st.session_state["v12_stage"] = "quiz"
+                st.session_state["v13_mode"] = "artist"
+                st.session_state["v13_quiz_idx"] = 0
+                st.session_state["v13_stage"] = "quiz"
                 st.rerun()
         with c2:
             track_help = ("Type the track / song name for each prelude."
@@ -455,9 +537,9 @@ if st.session_state["v12_stage"] == "upload":
             if st.button("🎵  Track / Song name", type="primary",
                          use_container_width=True, disabled=not has_track,
                          help=track_help):
-                st.session_state["v12_mode"] = "track"
-                st.session_state["v12_quiz_idx"] = 0
-                st.session_state["v12_stage"] = "quiz"
+                st.session_state["v13_mode"] = "track"
+                st.session_state["v13_quiz_idx"] = 0
+                st.session_state["v13_stage"] = "quiz"
                 st.rerun()
         with c3:
             album_help = ("Type the album / movie name for each prelude."
@@ -466,17 +548,17 @@ if st.session_state["v12_stage"] == "upload":
             if st.button("💿  Album / Movie name", type="primary",
                          use_container_width=True, disabled=not has_album,
                          help=album_help):
-                st.session_state["v12_mode"] = "album"
-                st.session_state["v12_quiz_idx"] = 0
-                st.session_state["v12_stage"] = "quiz"
+                st.session_state["v13_mode"] = "album"
+                st.session_state["v13_quiz_idx"] = 0
+                st.session_state["v13_stage"] = "quiz"
                 st.rerun()
 
 else:
-    results = st.session_state.get("v12_results")
+    results = st.session_state.get("v13_results")
     if not results:
         st.warning("No analysis found. Go back and analyze a video first.")
         if st.button("←  Back to upload"):
-            st.session_state["v12_stage"] = "upload"
+            st.session_state["v13_stage"] = "upload"
             st.rerun()
         st.stop()
 
@@ -486,11 +568,11 @@ else:
     prelude_paths = [Path(p) for p in results["prelude_paths"]]
     video_title = results["video_title"]
     meta = results.get("meta", {})
-    mode = st.session_state.get("v12_mode", "track")
+    mode = st.session_state.get("v13_mode", "track")
     mode_labels = {"artist": "artist name", "track": "track / song name",
                    "album": "album / movie name"}
     mode_emoji = {"artist": "🎤", "track": "🎵", "album": "💿"}
-    guess_min_ratio = st.session_state["v12_guess_min_ratio"]
+    guess_min_ratio = st.session_state["v13_guess_min_ratio"]
 
     st.markdown(f"### {mode_emoji.get(mode, '🎧')}  Quiz — {video_title}")
     st.markdown(f"**{len(segments)} songs detected** · One prelude per page · "
@@ -500,17 +582,17 @@ else:
     col_top = st.columns(2)
     with col_top[0]:
         if st.button("←  New upload"):
-            st.session_state["v12_stage"] = "upload"
-            st.session_state["v12_quiz_idx"] = 0
+            st.session_state["v13_stage"] = "upload"
+            st.session_state["v13_quiz_idx"] = 0
             st.rerun()
     with col_top[1]:
         st.markdown(f"<p style='text-align:right;color:#9090b0'>Song "
-                    f"{st.session_state['v12_quiz_idx'] + 1} of {len(segments)}</p>",
+                    f"{st.session_state['v13_quiz_idx'] + 1} of {len(segments)}</p>",
                     unsafe_allow_html=True)
 
     st.divider()
 
-    quiz_idx = st.session_state["v12_quiz_idx"]
+    quiz_idx = st.session_state["v13_quiz_idx"]
     if quiz_idx >= len(segments):
         st.success("🎉  Quiz complete!")
         st.markdown("### 📊  Summary")
@@ -519,8 +601,8 @@ else:
         for i, seg in enumerate(segments):
             idx = seg["index"]
             target, target_label = _mode_target(seg, meta, mode)
-            guess = st.session_state.get(f"v12_guess_{idx}", "").strip()
-            checked = st.session_state.get(f"v12_checked_{idx}", False)
+            guess = st.session_state.get(f"v13_guess_{idx}", "").strip()
+            checked = st.session_state.get(f"v13_checked_{idx}", False)
             if not checked:
                 status_icon, status_label = "⏭️", "Skipped"
             elif not target:
@@ -547,11 +629,11 @@ else:
 
         st.divider()
         if st.button("🔄  Play again"):
-            st.session_state["v12_quiz_idx"] = 0
+            st.session_state["v13_quiz_idx"] = 0
             st.rerun()
         if st.button("🏠  Back to upload"):
-            st.session_state["v12_stage"] = "upload"
-            st.session_state["v12_quiz_idx"] = 0
+            st.session_state["v13_stage"] = "upload"
+            st.session_state["v13_quiz_idx"] = 0
             st.rerun()
         st.stop()
 
@@ -564,8 +646,8 @@ else:
 
     target, target_label = _mode_target(seg, meta, mode)
 
-    guess_key = f"v12_guess_{idx}"
-    checked_key = f"v12_checked_{idx}"
+    guess_key = f"v13_guess_{idx}"
+    checked_key = f"v13_checked_{idx}"
 
     if guess_key not in st.session_state:
         st.session_state[guess_key] = ""
@@ -596,7 +678,7 @@ else:
                          disabled=st.session_state[checked_key],
                          placeholder=f"Type {target_label}...")
         with col_btn:
-            if st.button("Check", key=f"v12_btn_{idx}",
+            if st.button("Check", key=f"v13_btn_{idx}",
                         disabled=st.session_state[checked_key],
                         use_container_width=True):
                 st.session_state[checked_key] = True
@@ -620,16 +702,16 @@ else:
     nav_cols = st.columns(2)
     with nav_cols[0]:
         if quiz_idx > 0 and st.button("←  Previous", use_container_width=True):
-            st.session_state["v12_quiz_idx"] = quiz_idx - 1
+            st.session_state["v13_quiz_idx"] = quiz_idx - 1
             st.rerun()
     with nav_cols[1]:
         if quiz_idx < len(segments) - 1:
-            if st.button("Next →", key="v12_next", type="primary",
+            if st.button("Next →", key="v13_next", type="primary",
                          use_container_width=True):
-                st.session_state["v12_quiz_idx"] = quiz_idx + 1
+                st.session_state["v13_quiz_idx"] = quiz_idx + 1
                 st.rerun()
         else:
-            if st.button("Finish ✅", key="v12_finish", type="primary",
+            if st.button("Finish ✅", key="v13_finish", type="primary",
                          use_container_width=True):
-                st.session_state["v12_quiz_idx"] = len(segments)
+                st.session_state["v13_quiz_idx"] = len(segments)
                 st.rerun()

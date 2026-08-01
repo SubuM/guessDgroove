@@ -2,7 +2,7 @@
 guessDgroove v12 - Song Prelude Quiz
 Page 1: paste a YouTube link and extract the preludes.
 Choose what to guess: artist name, track/song name, or album/movie name.
-Page 2: quiz â€” hear each song prelude, type your guess and check it.
+Page 2: quiz — hear each song prelude, type your guess and check it.
 Run with: streamlit run v12.py
 Cloud: deploys as a Docker web service (e.g. Render free tier) with system
 ffmpeg; static-ffmpeg is only a local fallback when ffmpeg is not installed.
@@ -27,7 +27,7 @@ try:
     static_ffmpeg.add_paths(weak=True)
     _ffmpeg_path = shutil.which("ffmpeg")
 except Exception as e:
-    st.warning(f"âš ï¸ ffmpeg could not be initialised: {e}. "
+    st.warning(f"⚠️ ffmpeg could not be initialised: {e}. "
                "Audio processing may fail.")
 
 CACHE_DIR = Path("./cache/v7")
@@ -105,7 +105,7 @@ def segment_audio(filepath: str, silence_thresh: int = -40,
         return segments, total_ms
 
     if progress_callback:
-        progress_callback("No clear silence gaps â€” using spectral analysis...")
+        progress_callback("No clear silence gaps — using spectral analysis...")
     try:
         y, sr = librosa.load(filepath, sr=22050, mono=True)
 
@@ -202,7 +202,7 @@ def _assign_titles(segments: list[dict], chapters: list[dict], description: str)
 def _split_title(title: str) -> tuple:
     if not title:
         return None, None
-    for sep in (" - ", " â€“ ", " â€” ", " | "):
+    for sep in (" - ", " – ", " — ", " | "):
         if sep in title:
             parts = [p.strip() for p in title.split(sep) if p.strip()]
             if len(parts) >= 2:
@@ -299,7 +299,7 @@ def extract_prelude(filepath: str, start_ms: int, prelude_dur_ms: int, out_path:
     return out_path
 
 
-st.set_page_config(page_title="Song Prelude Extractor", page_icon="ðŸŽµ", layout="wide")
+st.set_page_config(page_title="Song Prelude Extractor", page_icon="🎵", layout="wide")
 st.markdown("""
 <style>
     .seg-card { background:#1a1a2e; border-radius:12px; padding:16px; margin:8px 0;
@@ -315,25 +315,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-if "v12_stage" not in st.session_state:
-    st.session_state["v12_stage"] = "upload"
-if "v12_guess_min_ratio" not in st.session_state:
-    st.session_state["v12_guess_min_ratio"] = 0.85
-if "v12_quiz_idx" not in st.session_state:
-    st.session_state["v12_quiz_idx"] = 0
-if "v12_mode" not in st.session_state:
-    st.session_state["v12_mode"] = "track"
+if "v10_stage" not in st.session_state:
+    st.session_state["v10_stage"] = "upload"
+if "v10_guess_min_ratio" not in st.session_state:
+    st.session_state["v10_guess_min_ratio"] = 0.85
+if "v10_quiz_idx" not in st.session_state:
+    st.session_state["v10_quiz_idx"] = 0
+if "v10_mode" not in st.session_state:
+    st.session_state["v10_mode"] = "track"
 
-st.title("ðŸŽµ Song Prelude Quiz")
+st.title("🎵 Song Prelude Quiz")
 st.markdown("Paste a YouTube link to a video containing **multiple songs in sequence** "
             "to hear a short intro prelude of each detected song.")
 
-if st.session_state["v12_stage"] == "upload":
-    url = st.text_input("YouTube URL", key="v12_url",
+if st.session_state["v10_stage"] == "upload":
+    url = st.text_input("YouTube URL", key="v10_url",
                         placeholder="https://www.youtube.com/watch?v=...",
                         label_visibility="collapsed")
 
-    with st.expander("âš™ï¸  Settings", expanded=False):
+    with st.expander("⚙️  Settings", expanded=False):
         col_a, col_b, col_c, col_d = st.columns(4)
         with col_a:
             silence_thresh = st.slider("Silence threshold (dB)", -60, -20, -40,
@@ -351,21 +351,21 @@ if st.session_state["v12_stage"] == "upload":
                                     help="Minimum similarity score needed for a guess to count as correct. "
                                          "1.00 = exact match only (after normalizing case/punctuation). "
                                          "Lower = more lenient.")
-        st.session_state["v12_guess_min_ratio"] = guess_min_ratio
+        st.session_state["v10_guess_min_ratio"] = guess_min_ratio
 
     prelude_dur_ms = prelude_sec * 1000
 
-    if st.button("ðŸ”  Analyze & Extract Preludes", type="primary", use_container_width=True) and url.strip():
+    if st.button("🔍  Analyze & Extract Preludes", type="primary", use_container_width=True) and url.strip():
         with st.status("Processing...", expanded=True) as status:
-            st.write("ðŸ“¥ Downloading audio...")
+            st.write("📥 Downloading audio...")
             try:
                 filepath, video_title, chapters, description, meta = download_audio(url.strip())
-                status.update(label=f"âœ… Downloaded: {video_title}", state="running")
+                status.update(label=f"✅ Downloaded: {video_title}", state="running")
             except Exception as e:
                 st.error(f"Download failed: {e}")
                 st.stop()
 
-            st.write("âœ‚ï¸  Detecting song boundaries...")
+            st.write("✂️  Detecting song boundaries...")
             status_box = st.empty()
             segments, total_ms = segment_audio(
                 filepath, silence_thresh=silence_thresh,
@@ -373,11 +373,11 @@ if st.session_state["v12_stage"] == "upload":
                 min_segment_len=min_segment_len,
                 progress_callback=lambda msg: status_box.info(msg))
 
-            st.write("ðŸ·ï¸  Identifying song names...")
+            st.write("🏷️  Identifying song names...")
             _assign_titles(segments, chapters, description)
             named = sum(1 for s in segments if s.get("title"))
 
-            st.write(f"ðŸŽ§ Extracting {prelude_sec}s preludes...")
+            st.write(f"🎧 Extracting {prelude_sec}s preludes...")
             prelude_paths = []
             combined = AudioSegment.empty()
             for seg in segments:
@@ -390,13 +390,13 @@ if st.session_state["v12_stage"] == "upload":
             medley_path = CACHE_DIR / "all_preludes.mp3"
             combined.export(str(medley_path), format="mp3", bitrate="128k")
 
-            status.update(label=f"âœ… Done â€” {len(segments)} songs detected", state="complete")
+            status.update(label=f"✅ Done — {len(segments)} songs detected", state="complete")
 
         if not segments:
             st.warning("No song segments detected. Try adjusting the detection settings.")
             st.stop()
 
-        st.session_state["v12_results"] = {
+        st.session_state["v10_results"] = {
             "url": url.strip(),
             "filepath": filepath,
             "video_title": video_title,
@@ -410,7 +410,7 @@ if st.session_state["v12_stage"] == "upload":
             "prelude_dur_ms": prelude_dur_ms,
         }
 
-    results = st.session_state.get("v12_results")
+    results = st.session_state.get("v10_results")
     if results and results["url"] == url.strip():
         meta = results.get("meta", {})
         segments = results["segments"]
@@ -421,7 +421,7 @@ if st.session_state["v12_stage"] == "upload":
             (_split_title(s.get("title"))[1] or s.get("title")) for s in segments)
         has_album = bool(meta.get("album"))
 
-        st.success(f"âœ… Analysis complete â€” **{len(segments)} songs detected**. "
+        st.success(f"✅ Analysis complete — **{len(segments)} songs detected**. "
                    "Choose what to guess:")
         avail = [lbl for lbl, ok in (("artist name", has_artist),
                                      ("track / song name", has_track),
@@ -432,51 +432,51 @@ if st.session_state["v12_stage"] == "upload":
                        "metadata or in the chapter/tracklist titles.")
         else:
             st.caption("No artist/track/album data found in this video's metadata "
-                       "or chapters â€” nothing can be graded.")
+                       "or chapters — nothing can be graded.")
 
         c1, c2, c3 = st.columns(3)
         with c1:
             artist_help = ("Type the artist name for each prelude."
                            if has_artist else
-                           "Not available â€” no artist found in the video metadata "
+                           "Not available — no artist found in the video metadata "
                            "or chapter/tracklist titles.")
-            if st.button("ðŸŽ¤  Artist name", type="primary",
+            if st.button("🎤  Artist name", type="primary",
                          use_container_width=True, disabled=not has_artist,
                          help=artist_help):
-                st.session_state["v12_mode"] = "artist"
-                st.session_state["v12_quiz_idx"] = 0
-                st.session_state["v12_stage"] = "quiz"
+                st.session_state["v10_mode"] = "artist"
+                st.session_state["v10_quiz_idx"] = 0
+                st.session_state["v10_stage"] = "quiz"
                 st.rerun()
         with c2:
             track_help = ("Type the track / song name for each prelude."
                           if has_track else
-                          "Not available â€” no chapter/tracklist titles found "
+                          "Not available — no chapter/tracklist titles found "
                           "for the detected songs.")
-            if st.button("ðŸŽµ  Track / Song name", type="primary",
+            if st.button("🎵  Track / Song name", type="primary",
                          use_container_width=True, disabled=not has_track,
                          help=track_help):
-                st.session_state["v12_mode"] = "track"
-                st.session_state["v12_quiz_idx"] = 0
-                st.session_state["v12_stage"] = "quiz"
+                st.session_state["v10_mode"] = "track"
+                st.session_state["v10_quiz_idx"] = 0
+                st.session_state["v10_stage"] = "quiz"
                 st.rerun()
         with c3:
             album_help = ("Type the album / movie name for each prelude."
                           if has_album else
-                          "Not available â€” no album/movie info in the video metadata.")
-            if st.button("ðŸ’¿  Album / Movie name", type="primary",
+                          "Not available — no album/movie info in the video metadata.")
+            if st.button("💿  Album / Movie name", type="primary",
                          use_container_width=True, disabled=not has_album,
                          help=album_help):
-                st.session_state["v12_mode"] = "album"
-                st.session_state["v12_quiz_idx"] = 0
-                st.session_state["v12_stage"] = "quiz"
+                st.session_state["v10_mode"] = "album"
+                st.session_state["v10_quiz_idx"] = 0
+                st.session_state["v10_stage"] = "quiz"
                 st.rerun()
 
 else:
-    results = st.session_state.get("v12_results")
+    results = st.session_state.get("v10_results")
     if not results:
         st.warning("No analysis found. Go back and analyze a video first.")
-        if st.button("â†  Back to upload"):
-            st.session_state["v12_stage"] = "upload"
+        if st.button("←  Back to upload"):
+            st.session_state["v10_stage"] = "upload"
             st.rerun()
         st.stop()
 
@@ -486,49 +486,49 @@ else:
     prelude_paths = [Path(p) for p in results["prelude_paths"]]
     video_title = results["video_title"]
     meta = results.get("meta", {})
-    mode = st.session_state.get("v12_mode", "track")
+    mode = st.session_state.get("v10_mode", "track")
     mode_labels = {"artist": "artist name", "track": "track / song name",
                    "album": "album / movie name"}
-    mode_emoji = {"artist": "ðŸŽ¤", "track": "ðŸŽµ", "album": "ðŸ’¿"}
-    guess_min_ratio = st.session_state["v12_guess_min_ratio"]
+    mode_emoji = {"artist": "🎤", "track": "🎵", "album": "💿"}
+    guess_min_ratio = st.session_state["v10_guess_min_ratio"]
 
-    st.markdown(f"### {mode_emoji.get(mode, 'ðŸŽ§')}  Quiz â€” {video_title}")
-    st.markdown(f"**{len(segments)} songs detected** Â· One prelude per page Â· "
-                f"Guess: **{mode_labels.get(mode, 'song name')}** Â· "
+    st.markdown(f"### {mode_emoji.get(mode, '🎧')}  Quiz — {video_title}")
+    st.markdown(f"**{len(segments)} songs detected** · One prelude per page · "
+                f"Guess: **{mode_labels.get(mode, 'song name')}** · "
                 f"Strictness: **{guess_min_ratio:.2f}**")
 
     col_top = st.columns(2)
     with col_top[0]:
-        if st.button("â†  New upload"):
-            st.session_state["v12_stage"] = "upload"
-            st.session_state["v12_quiz_idx"] = 0
+        if st.button("←  New upload"):
+            st.session_state["v10_stage"] = "upload"
+            st.session_state["v10_quiz_idx"] = 0
             st.rerun()
     with col_top[1]:
         st.markdown(f"<p style='text-align:right;color:#9090b0'>Song "
-                    f"{st.session_state['v12_quiz_idx'] + 1} of {len(segments)}</p>",
+                    f"{st.session_state['v10_quiz_idx'] + 1} of {len(segments)}</p>",
                     unsafe_allow_html=True)
 
     st.divider()
 
-    quiz_idx = st.session_state["v12_quiz_idx"]
+    quiz_idx = st.session_state["v10_quiz_idx"]
     if quiz_idx >= len(segments):
-        st.success("ðŸŽ‰  Quiz complete!")
-        st.markdown("### ðŸ“Š  Summary")
+        st.success("🎉  Quiz complete!")
+        st.markdown("### 📊  Summary")
 
         rows = []
         for i, seg in enumerate(segments):
             idx = seg["index"]
             target, target_label = _mode_target(seg, meta, mode)
-            guess = st.session_state.get(f"v12_guess_{idx}", "").strip()
-            checked = st.session_state.get(f"v12_checked_{idx}", False)
+            guess = st.session_state.get(f"v10_guess_{idx}", "").strip()
+            checked = st.session_state.get(f"v10_checked_{idx}", False)
             if not checked:
-                status_icon, status_label = "â­ï¸", "Skipped"
+                status_icon, status_label = "⏭️", "Skipped"
             elif not target:
-                status_icon, status_label = "âž–", "Not graded"
+                status_icon, status_label = "➖", "Not graded"
             elif check_guess(guess, target, min_ratio=guess_min_ratio):
-                status_icon, status_label = "âœ…", "Correct"
+                status_icon, status_label = "✅", "Correct"
             else:
-                status_icon, status_label = "âŒ", "Wrong"
+                status_icon, status_label = "❌", "Wrong"
             rows.append((i, idx, target, target_label, guess, status_icon, status_label, checked))
 
         score = sum(1 for r in rows if r[6] == "Correct")
@@ -540,18 +540,18 @@ else:
 
         for i, idx, target, target_label, guess, icon, status_label, checked in rows:
             t = target if target else f"({target_label} unavailable)"
-            g = f"*{guess}*" if guess else "â€”"
-            st.markdown(f"{icon}  **{i + 1}. {t}**  <span style='color:#9090b0'>Â· "
-                        f"your guess: {g} Â· {status_label}</span>",
+            g = f"*{guess}*" if guess else "—"
+            st.markdown(f"{icon}  **{i + 1}. {t}**  <span style='color:#9090b0'>· "
+                        f"your guess: {g} · {status_label}</span>",
                         unsafe_allow_html=True)
 
         st.divider()
-        if st.button("ðŸ”„  Play again"):
-            st.session_state["v12_quiz_idx"] = 0
+        if st.button("🔄  Play again"):
+            st.session_state["v10_quiz_idx"] = 0
             st.rerun()
-        if st.button("ðŸ   Back to upload"):
-            st.session_state["v12_stage"] = "upload"
-            st.session_state["v12_quiz_idx"] = 0
+        if st.button("🏠  Back to upload"):
+            st.session_state["v10_stage"] = "upload"
+            st.session_state["v10_quiz_idx"] = 0
             st.rerun()
         st.stop()
 
@@ -564,8 +564,8 @@ else:
 
     target, target_label = _mode_target(seg, meta, mode)
 
-    guess_key = f"v12_guess_{idx}"
-    checked_key = f"v12_checked_{idx}"
+    guess_key = f"v10_guess_{idx}"
+    checked_key = f"v10_checked_{idx}"
 
     if guess_key not in st.session_state:
         st.session_state[guess_key] = ""
@@ -580,9 +580,9 @@ else:
             'display:flex;align-items:center;justify-content:center;'
             f'font-weight:800;font-size:16px">{idx}</div>'
             "<div>"
-            f'<div class="time-label">{start_str} â€“ {end_str}</div>'
+            f'<div class="time-label">{start_str} – {end_str}</div>'
             f'<div class="time-sub">Duration: {dur_str}</div>'
-            f'<div class="prelude-label">â–¶ prelude ({prelude_sec}s)</div>'
+            f'<div class="prelude-label">▶ prelude ({prelude_sec}s)</div>'
             "</div></div></div>",
             unsafe_allow_html=True,
         )
@@ -596,7 +596,7 @@ else:
                          disabled=st.session_state[checked_key],
                          placeholder=f"Type {target_label}...")
         with col_btn:
-            if st.button("Check", key=f"v12_btn_{idx}",
+            if st.button("Check", key=f"v10_btn_{idx}",
                         disabled=st.session_state[checked_key],
                         use_container_width=True):
                 st.session_state[checked_key] = True
@@ -607,9 +607,9 @@ else:
             if target and guess.strip():
                 correct = check_guess(guess, target, min_ratio=guess_min_ratio)
                 if correct:
-                    st.success(f"âœ… Correct! â†’ **{target}**")
+                    st.success(f"✅ Correct! → **{target}**")
                 else:
-                    st.error(f"âŒ Wrong! Actual: **{target}**")
+                    st.error(f"❌ Wrong! Actual: **{target}**")
             elif target:
                 st.warning(f"Answer: **{target}**")
             else:
@@ -619,17 +619,17 @@ else:
 
     nav_cols = st.columns(2)
     with nav_cols[0]:
-        if quiz_idx > 0 and st.button("â†  Previous", use_container_width=True):
-            st.session_state["v12_quiz_idx"] = quiz_idx - 1
+        if quiz_idx > 0 and st.button("←  Previous", use_container_width=True):
+            st.session_state["v10_quiz_idx"] = quiz_idx - 1
             st.rerun()
     with nav_cols[1]:
         if quiz_idx < len(segments) - 1:
-            if st.button("Next â†’", key="v12_next", type="primary",
+            if st.button("Next →", key="v10_next", type="primary",
                          use_container_width=True):
-                st.session_state["v12_quiz_idx"] = quiz_idx + 1
+                st.session_state["v10_quiz_idx"] = quiz_idx + 1
                 st.rerun()
         else:
-            if st.button("Finish âœ…", key="v12_finish", type="primary",
+            if st.button("Finish ✅", key="v10_finish", type="primary",
                          use_container_width=True):
-                st.session_state["v12_quiz_idx"] = len(segments)
+                st.session_state["v10_quiz_idx"] = len(segments)
                 st.rerun()

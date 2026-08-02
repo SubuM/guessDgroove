@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    image: guessdgroove:v13
+    container_name: guessdgroove-app
+    ports:
+      - "8501:8501"
+    volumes:
+      - cache_data:/app/cache
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: guessdgroove-tunnel
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate --url http://app:8501
+    restart: unless-stopped
+
+volumes:
+  cache_data:
